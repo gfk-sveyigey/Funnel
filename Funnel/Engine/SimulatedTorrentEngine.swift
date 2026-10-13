@@ -35,6 +35,10 @@ final class SimulatedTorrentEngine: TorrentEngineProtocol {
         sessions[taskID]?.status
     }
 
+    func eventStream() -> AsyncStream<String> {
+        AsyncStream { $0.finish() }
+    }
+
     @discardableResult
     func add(magnet: String, saveDirectory: String) async throws -> String {
         let infoHash = Self.infoHash(from: magnet)

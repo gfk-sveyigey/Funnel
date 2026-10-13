@@ -15,6 +15,7 @@ final class AppModel {
     let settings: AppSettings
 
     @ObservationIgnored private var statusTask: Task<Void, Never>?
+    @ObservationIgnored private var eventTask: Task<Void, Never>?
 
     init() {
         let logs = LogStore()
@@ -39,6 +40,7 @@ final class AppModel {
             logs.log("上次退出时有 \(interrupted) 个任务被中断，已置为暂停", level: .warning)
         }
         startStatusObservation()
+        startEventObservation()
     }
 
     // MARK: - 操作
@@ -133,6 +135,15 @@ final class AppModel {
             }
         }
         refreshKeepAlive()
+    }
+
+    private func startEventObservation() {
+        eventTask?.cancel()
+        eventTask = Task { [engine, logs] in
+            for await line in engine.eventStream() {
+                logs.log(line)
+            }
+        }
     }
 
     private func refreshKeepAlive() {

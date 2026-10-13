@@ -5,6 +5,8 @@
 采用 **SwiftTorrent**（`warppipe/swift-torrent`，纯 Swift、SwiftPM）。
 默认引擎已切到 `SwiftTorrentEngine`；把 `EngineFactory.kind` 改成 `.simulated` 可一键回退占位引擎。
 
+> ⚠️ 已知阻塞项：**断点续传未实现**（库接受 `resumeData` 但从不应用），详见下文。
+
 ## 候选对比
 
 | 引擎 | 形态 | 关键依赖 | 平台 | 版本 | 许可证 | 结论 |
@@ -33,9 +35,27 @@
 2. **无版本标签**：只能 `branch: main` 或锁 commit SHA，复现性较弱。当前用 `branch: main`，后续建议锁 revision。
 3. **成熟度**：个人项目、约 44★，API 仍可能变动，需要自建回归。
 4. **能力缺口**：
+   - **断点续传未实现（高，阻塞）** → 见下文《断点续传》一节。
    - 无 per-file 选择优先级 → `selectFiles` 目前只记录、不下发（M3 需补）。
    - 无 per-file 进度 → 文件行进度暂显 0，只有任务级进度准确。
    - `deleteFiles` 粒度太粗（会删整个 savePath）→ 已改为由 `FileStore` 删除。
+
+
+## 断点续传：当前引擎的阻塞项
+
+- 库里确实有 `ResumeData`（`Storage/ResumeData.swift`，带 `encode()` / `decode(from:)`），`TorrentHandle.generateResumeData()` 也能产出。
+- 但 **`AddTorrentParams.resumeData` 在整个库里从未被读取**：
+  - `TorrentHandle.init` 不引用 `params.resumeData`；
+  - `setupDownloadComponents` 用 `PieceManager(info:)` 从零构建 `Bitfield`；
+  - `DiskIO` 也没有「校验已存在文件 / 恢复已完成分片」的逻辑。
+- 结论：**杀进程重启后进度丢失、会从头重下**，与 README「断点续传是硬要求」冲突。
+
+### 可选处理
+
+1. **给上游提 PR（推荐，工作量可控）**：让 `PieceManager` 接受初始 `Bitfield`（用 `ResumeData.completedPieces`），让 `DiskIO` 启动时按分片哈希校验已存在文件，并把 `params.resumeData` 透传进 `TorrentHandle`。库内已有 `Bitfield` / `PieceManager.getCompleted()` / `FileStorage` 等构件。
+2. **自行维护 fork**：上游未合并前先自用（也顺带能解决许可证问题）。
+3. **接受重下**：仅保证重启后任务不丢（当前实现：置为暂停 + 手动继续）。
+4. **换回 libtorrent 预案**：libtorrent 有成熟的 resume / 文件校验，代价是 C++ + Boost 的构建复杂度。
 
 ## 集成方式
 
@@ -50,6 +70,6 @@
 - [ ] 粘贴磁力 → 获取元数据 → 文件列表出现。
 - [ ] 能连上 peer 并真正下载（公网种子）。
 - [ ] 后台保活（静音音频 / PiP）下仍持续下载。
-- [ ] 杀进程重启后能按 resume 恢复。
+- [ ] 杀进程重启后能续传（**当前引擎未实现 resume 恢复，需上游修复 / fork 或换引擎**）。
 - [ ] 限速、做种开关生效。
 - [ ] 许可证问题解决。

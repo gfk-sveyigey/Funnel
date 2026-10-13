@@ -22,6 +22,8 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
     private var pollTask: Task<Void, Never>?
     private var seedingEnabled = true
     private var dhtStarted = false
+    private var eventContinuation: AsyncStream<String>.Continuation?
+    private var alertTask: Task<Void, Never>?
 
     init(listenPort: UInt16 = 6881, dhtEnabled: Bool = true) {
         var settings = SessionSettings(listenPort: listenPort, dhtEnabled: dhtEnabled)
@@ -41,6 +43,13 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
 
     func snapshot(_ taskID: String) -> TorrentTaskStatus? {
         nil
+    }
+
+    func eventStream() -> AsyncStream<String> {
+        let (stream, continuation) = AsyncStream<String>.makeStream()
+        eventContinuation = continuation
+        startAlertObservation()
+        return stream
     }
 
     @discardableResult
@@ -100,6 +109,40 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
         guard !dhtStarted, settings.dhtEnabled else { return }
         dhtStarted = true
         try? await session.startDHT()
+    }
+
+    private func startAlertObservation() {
+        guard alertTask == nil else { return }
+        alertTask = Task { [weak self] in
+            guard let self else { return }
+            let alerts = await self.session.alerts
+            for await alert in alerts {
+                if let line = Self.describe(alert) {
+                    self.eventContinuation?.yield(line)
+                }
+            }
+        }
+    }
+
+    private static func describe(_ alert: any Alert) -> String? {
+        switch alert {
+        case let a as TorrentAddedAlert:
+            return "已加入：\(a.name)"
+        case let a as TorrentRemovedAlert:
+            return "已移除任务 \(a.infoHash)"
+        case let a as TorrentFinishedAlert:
+            return "下载完成 \(a.infoHash)"
+        case let a as StateChangedAlert:
+            return "状态变化 \(a.previousState.rawValue) → \(a.newState.rawValue)"
+        case let a as TrackerErrorAlert:
+            return "Tracker 错误 \(a.url)：\(a.message)"
+        case let a as FileErrorAlert:
+            return "文件错误 \(a.path)：\(a.error)"
+        case let a as HashFailedAlert:
+            return "分片校验失败 piece \(a.pieceIndex)"
+        default:
+            return nil
+        }
     }
 
     private func startPollingIfNeeded() {

@@ -21,4 +21,7 @@ protocol TorrentEngineProtocol: AnyObject {
     /// 全量状态流：UI 订阅后同步任务列表。
     func statusStream() -> AsyncStream<TorrentTaskStatus>
     func snapshot(_ taskID: String) -> TorrentTaskStatus?
+
+    /// 引擎侧事件（tracker / peer / 错误）文本流，供 UI 记日志。
+    func eventStream() -> AsyncStream<String>
 }
