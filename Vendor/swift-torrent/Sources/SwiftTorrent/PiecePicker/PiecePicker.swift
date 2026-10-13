@@ -36,11 +36,13 @@ public struct PiecePicker: Sendable {
 
     /// Pick the next piece to request using rarest-first strategy.
     /// `have` is our own bitfield; `peerHas` is the peer's bitfield.
-    public func pick(have: Bitfield, peerHas: Bitfield) -> Int? {
+    public func pick(have: Bitfield, peerHas: Bitfield, wanted: Bitfield? = nil) -> Int? {
         var best: Int?
         var bestAvail = Int.max
 
         for i in 0..<pieceCount {
+            // Skip pieces the user didn't select.
+            if let wanted, !wanted.get(i) { continue }
             // We don't have it, peer does have it
             if !have.get(i) && peerHas.get(i) {
                 if availability[i] < bestAvail {

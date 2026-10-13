@@ -102,7 +102,14 @@ extension TorrentTask {
         downloadSpeed = status.downloadSpeed
         uploadSpeed = status.uploadSpeed
         peerCount = status.peerCount
+        // 引擎不带 per-file 选择状态，合并时保留用户在本地的勾选。
+        let selection = Dictionary(uniqueKeysWithValues: files.map { ($0.index, $0.isSelected) })
         files = status.files
+        for index in files.indices {
+            if let isSelected = selection[files[index].index] {
+                files[index].isSelected = isSelected
+            }
+        }
         errorMessage = status.errorMessage
     }
 }

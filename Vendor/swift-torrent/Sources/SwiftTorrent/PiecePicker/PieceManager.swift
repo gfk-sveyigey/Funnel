@@ -8,6 +8,8 @@ public actor PieceManager {
     private let totalSize: Int64
     private let pieceHashes: Data  // concatenated 20-byte SHA-1 hashes
     private var completed: Bitfield
+    /// Pieces the user actually wants (file selection). Defaults to all pieces.
+    private var wanted: Bitfield
     private var inProgress: Set<Int>
     private var pieceBuffers: [Int: Data]
 
@@ -22,6 +24,9 @@ public actor PieceManager {
         } else {
             self.completed = Bitfield(count: info.pieceCount)
         }
+        var allWanted = Bitfield(count: info.pieceCount)
+        for i in 0..<info.pieceCount { allWanted.set(i) }
+        self.wanted = allWanted
         self.inProgress = []
         self.pieceBuffers = [:]
     }
@@ -94,15 +99,44 @@ public actor PieceManager {
         completed.get(index)
     }
 
-    /// Check if all pieces are complete.
+    /// Check if all *wanted* pieces are complete.
     public func isComplete() -> Bool {
-        completed.allSet
+        for i in 0..<pieceCount where wanted.get(i) {
+            if !completed.get(i) { return false }
+        }
+        return true
     }
 
-    /// Get progress as a fraction.
+    /// Get progress as a fraction of the *wanted* pieces.
     public func progress() -> Double {
-        guard pieceCount > 0 else { return 1.0 }
-        return Double(completed.popcount) / Double(pieceCount)
+        let wantCount = wanted.popcount
+        guard wantCount > 0 else { return 1.0 }
+        var done = 0
+        for i in 0..<pieceCount where wanted.get(i) && completed.get(i) {
+            done += 1
+        }
+        return Double(done) / Double(wantCount)
+    }
+
+    /// Restrict the download to the given pieces (file selection). Non-wanted
+    /// pieces are never requested and don't count towards completion/progress.
+    public func setWanted(_ bitfield: Bitfield) {
+        guard bitfield.count == pieceCount else { return }
+        wanted = bitfield
+    }
+
+    /// The current wanted-piece bitfield.
+    public func getWanted() -> Bitfield {
+        wanted
+    }
+
+    /// Total size in bytes of the wanted pieces — the real download target.
+    public func wantedTotalSize() -> Int64 {
+        var total: Int64 = 0
+        for i in 0..<pieceCount where wanted.get(i) {
+            total += Int64(expectedPieceSize(i))
+        }
+        return total
     }
 
     /// Expected size of a specific piece.

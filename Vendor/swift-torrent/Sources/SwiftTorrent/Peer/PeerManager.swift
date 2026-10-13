@@ -197,11 +197,12 @@ public actor PeerManager {
         guard !peerChoking else { return }
 
         let completed = await pm.getCompleted()
+        let wanted = await pm.getWanted()
 
         while await state.canRequest {
             let peerBF = await state.getPeerBitfield()
             guard let picker = piecePicker,
-                  let pieceIndex = picker.pick(have: completed, peerHas: peerBF) else { break }
+                  let pieceIndex = picker.pick(have: completed, peerHas: peerBF, wanted: wanted) else { break }
 
             // Start piece if not in progress
             let inProg = await pm.isInProgress(pieceIndex)

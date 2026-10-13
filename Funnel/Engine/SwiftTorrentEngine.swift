@@ -2,8 +2,8 @@ import Foundation
 import SwiftTorrent
 
 /// 真实引擎：warppipe/swift-torrent（纯 Swift、SwiftPM，无 C/C++ 依赖）。
-/// 已知限制（见 docs/M0-ENGINE.md）：不支持按文件选择优先级，也不提供 per-file 进度，
-/// 所以 `selectFiles` 只做记录，文件进度留待其 API 支持后再补。
+/// 已 vendor 并打过补丁：支持断点续传、按文件选择。
+/// 已知限制（见 docs/M0-ENGINE.md）：不提供 per-file 进度，文件行进度暂显 0。
 @MainActor
 final class SwiftTorrentEngine: TorrentEngineProtocol {
 
@@ -24,6 +24,8 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
     private var dhtStarted = false
     /// 最近一次推送的状态缓存，供同步的 snapshot(_:) 查询。
     private var latestStatus: [String: TorrentTaskStatus] = [:]
+    /// 元数据未到位时暂存的按文件选择（磁力场景），metadata 到达后自动下发。
+    private var pendingSelection: [String: Set<Int>] = [:]
     private var eventContinuation: AsyncStream<String>.Continuation?
     private var alertTask: Task<Void, Never>?
 
@@ -97,6 +99,7 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
         guard let entry = entries.removeValue(forKey: taskID) else { return }
         // SwiftTorrent 的 deleteFiles 会删掉整个 savePath，粒度太粗；文件删除交给 FileStore。
         latestStatus[taskID] = nil
+        pendingSelection[taskID] = nil
         let infoHash = await entry.handle.infoHash
         await session.removeTorrent(infoHash, deleteFiles: false)
         await emitAll()
@@ -107,7 +110,15 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
     }
 
     func selectFiles(_ taskID: String, indexes: Set<Int>) async throws {
-        // 引擎暂不支持按文件选择；选择结果仍保存在任务模型里。
+        guard let entry = entries[taskID] else { return }
+        if await entry.handle.getFiles() != nil {
+            await entry.handle.setSelectedFiles(indexes)
+            pendingSelection[taskID] = nil
+        } else {
+            // 磁力任务还没拿到元数据，先记下来，metadata 到达后再下发。
+            pendingSelection[taskID] = indexes
+        }
+        await emitAll()
     }
 
     func setDownloadLimit(bytesPerSecond: Int?) {
@@ -178,6 +189,10 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
             guard let entry = entries[taskID] else { continue }
             let status = await entry.handle.status()
             let files = Self.mapFiles(await entry.handle.getFiles())
+            if let pending = pendingSelection[taskID], !files.isEmpty {
+                await entry.handle.setSelectedFiles(pending)
+                pendingSelection[taskID] = nil
+            }
             let mapped = Self.makeStatus(
                 status,
                 taskID: taskID,

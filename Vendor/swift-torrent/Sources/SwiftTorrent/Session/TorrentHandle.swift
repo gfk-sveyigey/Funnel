@@ -212,8 +212,9 @@ public actor TorrentHandle {
         }
     }
 
-    private func getRemainingBytes() -> Int64 {
-        (info?.totalSize ?? 0) - totalDownloaded
+    private func getRemainingBytes() async -> Int64 {
+        let total = (await pieceManager?.wantedTotalSize()) ?? info?.totalSize ?? 0
+        return max(0, total - totalDownloaded)
     }
 
     /// Pause the torrent.
@@ -232,6 +233,7 @@ public actor TorrentHandle {
     public func status() async -> TorrentStatus {
         let progress = await pieceManager?.progress() ?? 0
         let completed = await pieceManager?.getCompleted()
+        let wantedSize = (await pieceManager?.wantedTotalSize()) ?? info?.totalSize ?? 0
         let name: String
         if let info = info {
             name = info.name
@@ -249,7 +251,7 @@ public actor TorrentHandle {
             uploadRate: uploadRate,
             totalDownloaded: totalDownloaded,
             totalUploaded: totalUploaded,
-            totalSize: info?.totalSize ?? 0,
+            totalSize: wantedSize,
             numPeers: await peerManager.connectionCount,
             numSeeds: 0,
             piecesCompleted: completed?.popcount ?? 0,
@@ -260,6 +262,26 @@ public actor TorrentHandle {
     /// Returns the file entries for this torrent, or nil if metadata is not yet available.
     public func getFiles() -> [TorrentInfo.FileEntry]? {
         info?.files
+    }
+
+    /// Restrict the download to the given file indexes (multi-file torrents).
+    /// Called when the user toggles file checkboxes; pieces are mapped from the
+    /// byte ranges of the selected files.
+    public func setSelectedFiles(_ indexes: Set<Int>) async {
+        guard let info = info, info.pieceCount > 0, info.pieceLength > 0 else { return }
+        var wanted = Bitfield(count: info.pieceCount)
+        let pieceLength = Int64(info.pieceLength)
+        for (i, file) in info.files.enumerated() {
+            guard indexes.contains(i), file.length > 0 else { continue }
+            let first = Int(file.offset / pieceLength)
+            let last = Int((file.offset + file.length - 1) / pieceLength)
+            guard first >= 0, last >= first, last < info.pieceCount else { continue }
+            for p in first...last { wanted.set(p) }
+        }
+        // An empty selection would make the torrent look already-complete;
+        // treat it as "no restriction" instead.
+        guard !wanted.isEmpty else { return }
+        await pieceManager?.setWanted(wanted)
     }
 
     /// Generate resume data for saving state.

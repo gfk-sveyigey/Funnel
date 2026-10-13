@@ -36,7 +36,7 @@
 3. **成熟度**：个人项目、约 44★，API 仍可能变动，需要自建回归。
 4. **能力缺口**：
    - **断点续传**：上游未实现，已 vendor + 打补丁修复，见下文《断点续传》。
-   - 无 per-file 选择优先级 → `selectFiles` 目前只记录、不下发（M3 需补）。
+   - 按文件选择：上游 `PiecePicker` 只知道分片、没有文件概念。已打补丁：`PieceManager` 增加 wanted 分片位图，`PiecePicker.pick` 跳过未选分片，`TorrentHandle.setSelectedFiles` 把「选中文件」映射为分片集合；进度 / 完成判定 / 剩余量都按 wanted 计算。
    - 无 per-file 进度 → 文件行进度暂显 0，只有任务级进度准确。
    - `deleteFiles` 粒度太粗（会删整个 savePath）→ 已改为由 `FileStore` 删除。
 

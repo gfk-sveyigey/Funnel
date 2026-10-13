@@ -91,6 +91,11 @@ final class AppModel {
                         saveDirectory: directory.path,
                         resumeData: resumeData
                     )
+                    // 还原之前的按文件选择（全部选中则不必下发）。
+                    let selected = Set(task.files.filter(\.isSelected).map(\.index))
+                    if !selected.isEmpty, selected.count < task.files.count {
+                        try? await engine.selectFiles(task.id, indexes: selected)
+                    }
                     logs.log("重启恢复：重新加入 \(task.name)（校验后继续）")
                 }
                 refreshKeepAlive()
