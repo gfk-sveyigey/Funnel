@@ -2,8 +2,7 @@ import Foundation
 import SwiftTorrent
 
 /// 真实引擎：warppipe/swift-torrent（纯 Swift、SwiftPM，无 C/C++ 依赖）。
-/// 已 vendor 并打过补丁：支持断点续传、按文件选择。
-/// 已知限制（见 docs/M0-ENGINE.md）：不提供 per-file 进度，文件行进度暂显 0。
+/// 已 vendor 并打过补丁：支持断点续传、按文件选择（含 per-file 进度）。
 @MainActor
 final class SwiftTorrentEngine: TorrentEngineProtocol {
 
@@ -188,7 +187,10 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
         for taskID in Array(entries.keys) {
             guard let entry = entries[taskID] else { continue }
             let status = await entry.handle.status()
-            let files = Self.mapFiles(await entry.handle.getFiles())
+            let files = Self.mapFiles(
+                await entry.handle.getFiles(),
+                progress: await entry.handle.fileProgress()
+            )
             if let pending = pendingSelection[taskID], !files.isEmpty {
                 await entry.handle.setSelectedFiles(pending)
                 pendingSelection[taskID] = nil
@@ -241,10 +243,16 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
         }
     }
 
-    private static func mapFiles(_ raw: [TorrentInfo.FileEntry]?) -> [TorrentFile] {
+    private static func mapFiles(_ raw: [TorrentInfo.FileEntry]?, progress: [Int64]) -> [TorrentFile] {
         guard let raw else { return [] }
         return raw.enumerated().map { index, entry in
-            TorrentFile(index: index, path: entry.path, length: entry.length, downloaded: 0, isSelected: true)
+            TorrentFile(
+                index: index,
+                path: entry.path,
+                length: entry.length,
+                downloaded: index < progress.count ? progress[index] : 0,
+                isSelected: true
+            )
         }
     }
 

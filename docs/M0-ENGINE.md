@@ -37,7 +37,7 @@
 4. **能力缺口**：
    - **断点续传**：上游未实现，已 vendor + 打补丁修复，见下文《断点续传》。
    - 按文件选择：上游 `PiecePicker` 只知道分片、没有文件概念。已打补丁：`PieceManager` 增加 wanted 分片位图，`PiecePicker.pick` 跳过未选分片，`TorrentHandle.setSelectedFiles` 把「选中文件」映射为分片集合；进度 / 完成判定 / 剩余量都按 wanted 计算。
-   - 无 per-file 进度 → 文件行进度暂显 0，只有任务级进度准确。
+   - per-file 进度：上游不报。已补 `TorrentHandle.fileProgress()`——按「已完成分片 → 文件字节区间」反推每个文件的已下字节，UI 文件行显示真实进度。
    - `deleteFiles` 粒度太粗（会删整个 savePath）→ 已改为由 `FileStore` 删除。
 
 

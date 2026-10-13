@@ -264,6 +264,24 @@ public actor TorrentHandle {
         info?.files
     }
 
+    /// Bytes already downloaded for each file, derived from completed pieces.
+    /// The library has no per-file bookkeeping, so this reconstructs it via the
+    /// piece-to-file slice mapping.
+    public func fileProgress() async -> [Int64] {
+        guard let info = info, let pm = pieceManager else { return [] }
+        let storage = FileStorage(info: info)
+        let completed = await pm.getCompleted()
+        var result = [Int64](repeating: 0, count: info.files.count)
+        for piece in 0..<info.pieceCount where completed.get(piece) {
+            for slice in storage.fileSlices(forPiece: piece) {
+                if slice.fileIndex >= 0 && slice.fileIndex < result.count {
+                    result[slice.fileIndex] += Int64(slice.length)
+                }
+            }
+        }
+        return result
+    }
+
     /// Restrict the download to the given file indexes (multi-file torrents).
     /// Called when the user toggles file checkboxes; pieces are mapped from the
     /// byte ranges of the selected files.

@@ -81,9 +81,16 @@ struct TaskDetailView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.path)
                     .lineLimit(1)
-                Text(file.length.formattedBytes)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if file.isSelected && file.length > 0 {
+                    ProgressView(value: file.progress)
+                    Text("\(file.downloaded.formattedBytes) / \(file.length.formattedBytes)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(file.length.formattedBytes)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Spacer()
