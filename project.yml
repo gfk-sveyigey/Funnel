@@ -1,0 +1,51 @@
+name: Funnel
+options:
+  bundleIdPrefix: com.aholic
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "0.0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    # 语言模式停留在 Swift 5：SwiftTorrent 只要求 Swift 5.9 工具链，Swift 5 语言模式即可；
+    # 我们自己的代码以 @MainActor + @Observable 为主，暂不需要 Swift 6 严格并发。
+    # 将来若引入要求 Swift 6 的依赖再统一升级。
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+packages:
+  # 已 vendor 进仓库并打过「断点续传」补丁（见 docs/M0-ENGINE.md），改用本地路径依赖。
+  SwiftTorrent:
+    path: Vendor/swift-torrent
+
+targets:
+  Funnel:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Funnel
+    dependencies:
+      - package: SwiftTorrent
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aholic.funnel
+        PRODUCT_NAME: Funnel
+        INFOPLIST_FILE: Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+
+schemes:
+  Funnel:
+    build:
+      targets:
+        Funnel: all
+    run:
+      config: Debug
+    archive:
+      config: Release

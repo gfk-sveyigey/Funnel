@@ -1,0 +1,112 @@
+name: Build & Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: github.event.pull_request.merged == true
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "26.6"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Read & validate version
+        id: version
+        run: |
+          set -euo pipefail
+          version=$(tr -d '[:space:]' < VERSION)
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::VERSION '$version' is not valid semver"
+            exit 1
+          fi
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          if [[ "$version" == *-* ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip if tag already exists
+        id: tag
+        run: |
+          set -euo pipefail
+          tag="v${{ steps.version.outputs.value }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag $tag already exists — skipping release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate Info.plist
+        if: steps.tag.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          plutil -lint Info.plist
+          for key in UIFileSharingEnabled LSSupportsOpeningDocumentsInPlace; do
+            value=$(/usr/libexec/PlistBuddy -c "Print :$key" Info.plist)
+            if [ "$value" != "true" ]; then
+              echo "::error::Info.plist $key must be <true/> (got '$value')"
+              exit 1
+            fi
+          done
+
+      - name: Generate Xcode project
+        if: steps.tag.outputs.exists == 'false'
+        run: xcodegen generate
+
+      - name: Resolve Swift packages
+        if: steps.tag.outputs.exists == 'false'
+        run: xcodebuild -project Funnel.xcodeproj -scheme Funnel -derivedDataPath build -resolvePackageDependencies
+
+      - name: Build (Release, unsigned)
+        if: steps.tag.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project Funnel.xcodeproj \
+            -scheme Funnel \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="${{ steps.version.outputs.value }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            build
+
+      - name: Package unsigned IPA + SHA256
+        if: steps.tag.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/Funnel.app Payload/
+          ipa="Funnel-${{ steps.version.outputs.value }}-unsigned.ipa"
+          zip -qry "$ipa" Payload
+          shasum -a 256 "$ipa" > SHA256.txt
+
+      - name: Create release
+        if: steps.tag.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.value }}
+          name: v${{ steps.version.outputs.value }}
+          body: ${{ github.event.pull_request.body }}
+          prerelease: ${{ steps.version.outputs.prerelease }}
+          files: |
+            Funnel-${{ steps.version.outputs.value }}-unsigned.ipa
+            SHA256.txt

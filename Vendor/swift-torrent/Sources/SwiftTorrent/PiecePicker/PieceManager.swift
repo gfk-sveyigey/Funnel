@@ -1,0 +1,173 @@
+import Foundation
+import Crypto
+
+/// Tracks piece completion and verifies SHA-1 hashes.
+public actor PieceManager {
+    private let pieceCount: Int
+    private let pieceLength: Int
+    private let totalSize: Int64
+    private let pieceHashes: Data  // concatenated 20-byte SHA-1 hashes
+    private var completed: Bitfield
+    /// Pieces the user actually wants (file selection). Defaults to all pieces.
+    private var wanted: Bitfield
+    private var inProgress: Set<Int>
+    private var pieceBuffers: [Int: Data]
+
+    public init(info: TorrentInfo, completed: Bitfield? = nil) {
+        self.pieceCount = info.pieceCount
+        self.pieceLength = info.pieceLength
+        self.totalSize = info.totalSize
+        self.pieceHashes = info.pieces
+        // Seed from resume data when the bitfield matches this torrent.
+        if let completed, completed.count == info.pieceCount {
+            self.completed = completed
+        } else {
+            self.completed = Bitfield(count: info.pieceCount)
+        }
+        var allWanted = Bitfield(count: info.pieceCount)
+        for i in 0..<info.pieceCount { allWanted.set(i) }
+        self.wanted = allWanted
+        self.inProgress = []
+        self.pieceBuffers = [:]
+    }
+
+    /// Mark a piece as being downloaded.
+    public func startPiece(_ index: Int) {
+        inProgress.insert(index)
+        pieceBuffers[index] = Data()
+    }
+
+    /// Add a block to a piece being downloaded.
+    public func addBlock(pieceIndex: Int, offset: Int, data: Data) {
+        guard var buffer = pieceBuffers[pieceIndex] else { return }
+        // Ensure buffer is large enough
+        let needed = offset + data.count
+        if buffer.count < needed {
+            buffer.append(Data(count: needed - buffer.count))
+        }
+        buffer.replaceSubrange(offset..<offset + data.count, with: data)
+        pieceBuffers[pieceIndex] = buffer
+    }
+
+    /// Verify and complete a piece.
+    public func completePiece(_ index: Int) -> Bool {
+        guard let buffer = pieceBuffers[index] else { return false }
+
+        // Verify hash
+        let expectedHash = pieceHashes.subdata(in: index * 20..<(index + 1) * 20)
+        let actualHash = Data(Insecure.SHA1.hash(data: buffer))
+
+        guard actualHash == expectedHash else {
+            // Hash mismatch — piece is corrupt
+            pieceBuffers.removeValue(forKey: index)
+            inProgress.remove(index)
+            return false
+        }
+
+        completed.set(index)
+        inProgress.remove(index)
+        pieceBuffers.removeValue(forKey: index)
+        return true
+    }
+
+    /// Get the completed bitfield.
+    public func getCompleted() -> Bitfield {
+        completed
+    }
+
+    /// Hash-verify pieces that resume data claims are complete against what is
+    /// actually on disk. Pieces whose data is missing, short, or corrupt stay
+    /// unverified so they get re-downloaded. Returns the number newly verified.
+    @discardableResult
+    public func verifyPieces(_ indices: [Int], using disk: DiskIO) async -> Int {
+        var verified = 0
+        for index in indices {
+            guard index >= 0, index < pieceCount, !completed.get(index) else { continue }
+            guard let data = try? await disk.readPiece(index: index) else { continue }
+            guard data.count == expectedPieceSize(index) else { continue }
+            let expectedHash = pieceHashes.subdata(in: index * 20..<(index + 1) * 20)
+            let actualHash = Data(Insecure.SHA1.hash(data: data))
+            guard actualHash == expectedHash else { continue }
+            completed.set(index)
+            verified += 1
+        }
+        return verified
+    }
+
+    /// Check if a piece is complete.
+    public func hasPiece(_ index: Int) -> Bool {
+        completed.get(index)
+    }
+
+    /// Check if all *wanted* pieces are complete.
+    public func isComplete() -> Bool {
+        for i in 0..<pieceCount where wanted.get(i) {
+            if !completed.get(i) { return false }
+        }
+        return true
+    }
+
+    /// Get progress as a fraction of the *wanted* pieces.
+    public func progress() -> Double {
+        let wantCount = wanted.popcount
+        guard wantCount > 0 else { return 1.0 }
+        var done = 0
+        for i in 0..<pieceCount where wanted.get(i) && completed.get(i) {
+            done += 1
+        }
+        return Double(done) / Double(wantCount)
+    }
+
+    /// Restrict the download to the given pieces (file selection). Non-wanted
+    /// pieces are never requested and don't count towards completion/progress.
+    public func setWanted(_ bitfield: Bitfield) {
+        guard bitfield.count == pieceCount else { return }
+        wanted = bitfield
+    }
+
+    /// The current wanted-piece bitfield.
+    public func getWanted() -> Bitfield {
+        wanted
+    }
+
+    /// Total size in bytes of the wanted pieces — the real download target.
+    public func wantedTotalSize() -> Int64 {
+        var total: Int64 = 0
+        for i in 0..<pieceCount where wanted.get(i) {
+            total += Int64(expectedPieceSize(i))
+        }
+        return total
+    }
+
+    /// Expected size of a specific piece.
+    public func expectedPieceSize(_ index: Int) -> Int {
+        let start = Int64(index) * Int64(pieceLength)
+        return Int(min(Int64(pieceLength), totalSize - start))
+    }
+
+    /// Get the assembled piece data buffer (before completion/verification).
+    public func getPieceBuffer(_ index: Int) -> Data? {
+        pieceBuffers[index]
+    }
+
+    /// Number of 16KB blocks in a piece.
+    public func blockCount(for pieceIndex: Int) -> Int {
+        let size = expectedPieceSize(pieceIndex)
+        return (size + 16383) / 16384
+    }
+
+    /// Whether a piece is currently being downloaded.
+    public func isInProgress(_ index: Int) -> Bool {
+        inProgress.contains(index)
+    }
+
+    /// The standard piece length for this torrent.
+    public func getPieceLength() -> Int {
+        pieceLength
+    }
+
+    /// Total number of pieces.
+    public func getPieceCount() -> Int {
+        pieceCount
+    }
+}

@@ -4,19 +4,23 @@
 
 - 平台：仅 iOS（侧载分发，非 App Store）。
 - 定位：粘贴/接收磁力链接 → 后台下载 → 成品进「文件」App，可播放。
-- 引擎：**SwiftyTorrent**（纯 Swift，省掉 libtorrent/Boost 的构建地狱）。
+- 引擎：**SwiftTorrent**（纯 Swift，省掉 libtorrent/Boost 的构建地狱）。库已 vendor 进 `Vendor/swift-torrent` 并打补丁支持**断点续传**（见 `docs/M0-ENGINE.md`）。
 - 保活：**静音音频** 与 **画中画（PiP）** 双方案，用户可选/可切换。
 
 ## 二、技术选型与依据
 
-- 引擎 `SwiftyTorrent`
+- 引擎 `SwiftTorrent`
   - 优点：纯 Swift，无 C++/Boost 交叉编译，集成成本低。
   - 代价：成熟度与功能覆盖未知，**这是本项目最大的风险**（见 M0）。
   - 缓解：用 `TorrentEngineProtocol` 门面隔离引擎，一旦不可用可整体替换为 libtorrent，UI 层零改动。
+  - 续传 / 文件选择：上游都不支持，已 vendor 源码 + 打补丁（分片位图 seed + 启动哈希校验；wanted 分片位图 + 文件→分片映射），详见 `docs/M0-ENGINE.md`。
 - 保活双方案
   - 静音音频：`AVAudioSession(.playback)` + 循环播放极短静音文件，无界面侵入、最稳。
   - PiP：`AVPictureInPictureController` 挂循环占位视频，用户可见、可主动关闭。
   - 两者都依赖 `UIBackgroundModes: audio`；做成策略可插拔 + 失败自动降级链。
+- UI 视觉：采用 iOS 26 的 **液态玻璃（Liquid Glass）** 设计语言，导航栏 / 工具栏 / 卡片使用玻璃材质（SwiftUI `.glassEffect()` / `GlassEffectContainer`，UIKit `UIGlassEffect`）。
+  - 回退：旧系统或开启「降低透明度 / 降低动态效果」时自动降级为 `UIBlurEffect` 毛玻璃，无可模糊能力时用纯色，保证可读性。
+  - 边界：玻璃仅作装饰层，不遮挡任务进度等关键信息；限制玻璃层数量与范围，避免大面积堆叠带来的性能与功耗开销。
 - 分发
   - AltStore / SideStore（7 天重签）、付费账号（1 年）、或 TrollStore（视系统版本）。
 
@@ -24,7 +28,7 @@
 
 必须先用 3–5 天回答清楚这些问题，否则后续排期无意义：
 
-- SwiftyTorrent 的语言版本 / iOS 部署目标能否编到当前 Swift/Xcode。
+- SwiftTorrent 的语言版本 / iOS 部署目标能否编到当前 Swift/Xcode。
 - 支持范围：DHT（单播 UDP）、UDP/HTTP Tracker、PEX、磁力元数据获取（BEP-9）。
 - 多文件种子与**文件选择**（只下部分文件）。
 - 断点续传 / 跨启动恢复。
@@ -35,11 +39,13 @@
 
 产出：一份「可行 / 需改造 / 不可行」结论。**不可行则切换 libtorrent 预案。**
 
+引擎评估与选型结论（含弃用 SwiftyTorrent 的原因）见 [`docs/M0-ENGINE.md`](docs/M0-ENGINE.md)。
+
 ## 四、系统架构（模块划分）
 
 - `App / UI 层`：SwiftUI，粘贴磁力、任务列表、任务详情、设置、日志。
 - `TorrentEngineProtocol`（门面）：`add(magnet:) / pause / resume / remove / fileSelection / statusStream`。
-  - `SwiftyTorrentEngine`：默认实现。
+  - `SwiftTorrentEngine`：默认实现。
   - `LibTorrentEngine`：预案实现（接口预留）。
 - `TorrentTaskStore`：任务模型持久化与状态同步。
 - `KeepAliveCoordinator`：静音音频 / PiP 策略调度 + 降级链 + 打断处理。
@@ -78,7 +84,7 @@
 ## 八、目录结构（工程建议）
 
 - `Nox-like/App`（入口、TabView）
-- `Engine/`（门面协议 + SwiftyTorrent 适配 + 预案）
+- `Engine/`（门面协议 + SwiftTorrent 适配 + 预案）
 - `KeepAlive/`（两种策略 + 协调器）
 - `Store/`（任务持久化、文件管理）
 - `Features/Browser`（磁力粘贴/接收）、`Features/Tasks`、`Features/Settings`、`Features/Logs`
@@ -86,7 +92,7 @@
 
 ## 九、里程碑与排期（单人）
 
-- **M0 可行性 Spike（3–5 天，Gate）**：SwiftyTorrent 编译 + 磁力跑通。
+- **M0 可行性 Spike（3–5 天，Gate）**：SwiftTorrent 编译 + 磁力跑通。
 - **M1 骨架与引擎接入（1–2 周）**：门面 + 粘贴磁力 + 任务列表 + 元数据阶段 UI。
 - **M2 保活子系统（约 1 周）**：静音音频 + PiP 双方案、切换、降级、打断处理。
 - **M3 下载能力（1–2 周）**：文件选择、进度/速度、暂停续传、限速（视引擎能力）、做种开关。
@@ -97,7 +103,7 @@
 
 ## 十、风险登记
 
-- **SwiftyTorrent 不成熟/不可用（高）** → M0 验证 + 门面抽象。
+- **SwiftTorrent 不成熟/不可用（高）** → M0 验证 + 门面抽象。
 - **保活不稳定、被系统杀（高）** → 断点续传 + 双方案降级 + 恢复重连。
 - **协议覆盖不全**（部分 Tracker/DHT 场景失败）（中） → 引擎补齐或换实现。
 - **功耗/发热**（中） → 限速、完成即停做种、可配置。
@@ -111,3 +117,13 @@
 - 静音音频与 PiP 两种保活可切换，PiP 关闭能自动降级。
 - 完成文件在「文件」App 可见、可分享、可删除。
 - 无崩溃、无明显内存泄漏，日志可导出。
+
+## 十二、构建与发布（CI/CD）
+
+- 构建与发布全部走 **GitHub Actions**，用 XcodeGen 生成 Xcode 工程（`.xcodeproj` 不提交）。
+- 版本号唯一来源：仓库根目录的 `VERSION` 文件（semver，如 `0.1.0`）。
+- 工作流：
+  - `dev` 分支推送 → 编译 Debug 版**无签名** IPA，上传为 Actions 工件（保留 14 天）。
+  - 合并到 `main` 的 PR → 编译 Release 版**无签名** IPA，创建 `v<VERSION>` 标签与 Release。
+- 产物为未签名 IPA，需用 AltStore / SideStore / Sideloadly 或自有证书重签名后安装。
+- 完整触发规则、发布步骤与注意事项见 [`docs/RELEASING.md`](docs/RELEASING.md)。
