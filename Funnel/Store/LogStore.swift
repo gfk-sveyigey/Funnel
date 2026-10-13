@@ -25,7 +25,7 @@ final class LogStore {
         let message: String
 
         var line: String {
-            "[(Self.formatter.string(from: date))] [(level.rawValue.uppercased())] (message)"
+            "[\(Self.formatter.string(from: date))] [\(level.rawValue.uppercased())] \(message)"
         }
 
         private static let formatter: ISO8601DateFormatter = {

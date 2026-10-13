@@ -30,7 +30,7 @@ final class AppModel {
         keepAlive = KeepAliveCoordinator()
         keepAlive.preferredMode = settings.keepAliveMode
 
-        logs.log("Funnel 启动，引擎：(engine.engineName)")
+        logs.log("Funnel 启动，引擎：\(engine.engineName)")
         startStatusObservation()
     }
 
@@ -46,10 +46,10 @@ final class AppModel {
             do {
                 let directory = try fileStore.prepareDirectory(forName: engineDisplayName(for: magnet))
                 let id = try await engine.add(magnet: magnet, saveDirectory: directory)
-                logs.log("已添加任务 (id)")
+                logs.log("已添加任务 \(id)")
                 refreshKeepAlive()
             } catch {
-                logs.log("添加失败：(error.localizedDescription)", level: .error)
+                logs.log("添加失败：\(error.localizedDescription)", level: .error)
             }
         }
     }
@@ -57,7 +57,7 @@ final class AppModel {
     func pause(_ task: TorrentTask) {
         Task {
             try? await engine.pause(task.id)
-            logs.log("暂停 (task.name)")
+            logs.log("暂停 \(task.name)")
             refreshKeepAlive()
         }
     }
@@ -65,7 +65,7 @@ final class AppModel {
     func resume(_ task: TorrentTask) {
         Task {
             try? await engine.resume(task.id)
-            logs.log("继续 (task.name)")
+            logs.log("继续 \(task.name)")
             refreshKeepAlive()
         }
     }
@@ -74,7 +74,7 @@ final class AppModel {
         Task {
             try? await engine.remove(task.id, deleteData: deleteData)
             taskStore.remove(id: task.id, deleteData: deleteData)
-            logs.log(deleteData ? "删除任务与文件 (task.name)" : "移除任务 (task.name)")
+            logs.log(deleteData ? "删除任务与文件 \(task.name)" : "移除任务 \(task.name)")
             refreshKeepAlive()
         }
     }
@@ -94,7 +94,7 @@ final class AppModel {
     func setKeepAliveMode(_ mode: KeepAliveMode) {
         settings.keepAliveMode = mode
         keepAlive.preferredMode = mode
-        logs.log("保活模式切换为 (mode.title)")
+        logs.log("保活模式切换为 \(mode.title)")
         refreshKeepAlive()
     }
 

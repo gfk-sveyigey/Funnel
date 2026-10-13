@@ -34,7 +34,9 @@ final class PictureInPictureKeepAlive: NSObject, KeepAliveStrategy {
         self.playerLayer = layer
         attach(layer)
 
-        let controller = AVPictureInPictureController(playerLayer: layer)
+        guard let controller = AVPictureInPictureController(playerLayer: layer) else {
+            throw KeepAliveError.unsupported(name)
+        }
         controller.delegate = self
         self.controller = controller
 
@@ -64,7 +66,7 @@ final class PictureInPictureKeepAlive: NSObject, KeepAliveStrategy {
     }
 }
 
-extension PictureInPictureKeepAlive: AVPictureInPictureControllerDelegate {
+extension PictureInPictureKeepAlive: @preconcurrency AVPictureInPictureControllerDelegate {
 
     func pictureInPictureControllerDidStopPictureInPicture(_ controller: AVPictureInPictureController) {
         // 用户主动关闭 PiP → 交给协调器按降级链处理。
