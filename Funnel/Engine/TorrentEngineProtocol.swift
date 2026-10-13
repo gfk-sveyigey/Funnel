@@ -12,6 +12,9 @@ protocol TorrentEngineProtocol: AnyObject {
     func pause(_ taskID: String) async throws
     func resume(_ taskID: String) async throws
     func remove(_ taskID: String, deleteData: Bool) async throws
+    /// 引擎中当前是否存在该任务的运行时句柄（App 重启后为 false）。
+    /// UI 用它判断「继续」是走引擎 resume，还是凭磁力重新加入。
+    func contains(_ taskID: String) -> Bool
     /// 只下载选中的文件（多文件种子）。
     func selectFiles(_ taskID: String, indexes: Set<Int>) async throws
     func setDownloadLimit(bytesPerSecond: Int?)

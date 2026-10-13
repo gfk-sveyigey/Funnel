@@ -73,9 +73,21 @@ final class AppModel {
 
     func resume(_ task: TorrentTask) {
         Task {
-            try? await engine.resume(task.id)
-            logs.log("继续 \(task.name)")
-            refreshKeepAlive()
+            do {
+                if engine.contains(task.id) {
+                    try await engine.resume(task.id)
+                    logs.log("继续 \(task.name)")
+                } else {
+                    // App 重启后引擎里的句柄已丢失，「继续」需要凭磁力重新加入。
+                    // 已知限制：当前引擎不消费 resumeData，会重新校验/下载（见 docs/M0-ENGINE.md）。
+                    let directory = try fileStore.prepareDirectory(relativePath: task.savePath)
+                    try await engine.add(magnet: task.magnet, saveDirectory: directory.path)
+                    logs.log("重启恢复：重新加入 \(task.name)", level: .warning)
+                }
+                refreshKeepAlive()
+            } catch {
+                logs.log("继续失败：\(error.localizedDescription)", level: .error)
+            }
         }
     }
 

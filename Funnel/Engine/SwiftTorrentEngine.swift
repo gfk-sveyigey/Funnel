@@ -22,6 +22,8 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
     private var pollTask: Task<Void, Never>?
     private var seedingEnabled = true
     private var dhtStarted = false
+    /// 最近一次推送的状态缓存，供同步的 snapshot(_:) 查询。
+    private var latestStatus: [String: TorrentTaskStatus] = [:]
     private var eventContinuation: AsyncStream<String>.Continuation?
     private var alertTask: Task<Void, Never>?
 
@@ -42,7 +44,7 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
     }
 
     func snapshot(_ taskID: String) -> TorrentTaskStatus? {
-        nil
+        latestStatus[taskID]
     }
 
     func eventStream() -> AsyncStream<String> {
@@ -84,9 +86,14 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
     func remove(_ taskID: String, deleteData: Bool) async throws {
         guard let entry = entries.removeValue(forKey: taskID) else { return }
         // SwiftTorrent 的 deleteFiles 会删掉整个 savePath，粒度太粗；文件删除交给 FileStore。
+        latestStatus[taskID] = nil
         let infoHash = await entry.handle.infoHash
         await session.removeTorrent(infoHash, deleteFiles: false)
         await emitAll()
+    }
+
+    func contains(_ taskID: String) -> Bool {
+        entries[taskID] != nil
     }
 
     func selectFiles(_ taskID: String, indexes: Set<Int>) async throws {
@@ -161,13 +168,15 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
             guard let entry = entries[taskID] else { continue }
             let status = await entry.handle.status()
             let files = Self.mapFiles(await entry.handle.getFiles())
-            continuation.yield(Self.makeStatus(
+            let mapped = Self.makeStatus(
                 status,
                 taskID: taskID,
                 entry: entry,
                 files: files,
                 seedingEnabled: seedingEnabled
-            ))
+            )
+            latestStatus[taskID] = mapped
+            continuation.yield(mapped)
         }
     }
 

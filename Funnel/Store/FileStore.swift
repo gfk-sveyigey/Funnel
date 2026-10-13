@@ -22,6 +22,16 @@ final class FileStore {
         return directory
     }
 
+    /// 用持久化的相对路径（相对 Documents）还原任务目录，并确保存在；返回**绝对** URL。
+    /// 重启后「继续」任务时用它找回原来的落盘目录。
+    func prepareDirectory(relativePath: String) throws -> URL {
+        let directory = relativePath.isEmpty
+            ? downloadsRoot
+            : url(forRelativePath: relativePath)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+
     func exists(_ url: URL) -> Bool {
         fileManager.fileExists(atPath: url.path)
     }

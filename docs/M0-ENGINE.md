@@ -49,12 +49,13 @@
   - `setupDownloadComponents` 用 `PieceManager(info:)` 从零构建 `Bitfield`；
   - `DiskIO` 也没有「校验已存在文件 / 恢复已完成分片」的逻辑。
 - 结论：**杀进程重启后进度丢失、会从头重下**，与 README「断点续传是硬要求」冲突。
+- App 层现状：重启后原任务会被置为「已暂停」，点「继续」时 `AppModel` 检测到引擎已无句柄（`engine.contains == false`），会凭磁力**重新加入**并重新校验/下载；任务元数据（名称、目录、文件列表）不会丢。
 
 ### 可选处理
 
 1. **给上游提 PR（推荐，工作量可控）**：让 `PieceManager` 接受初始 `Bitfield`（用 `ResumeData.completedPieces`），让 `DiskIO` 启动时按分片哈希校验已存在文件，并把 `params.resumeData` 透传进 `TorrentHandle`。库内已有 `Bitfield` / `PieceManager.getCompleted()` / `FileStorage` 等构件。
 2. **自行维护 fork**：上游未合并前先自用（也顺带能解决许可证问题）。
-3. **接受重下**：仅保证重启后任务不丢（当前实现：置为暂停 + 手动继续）。
+3. **接受重下**（当前实现）：重启后任务不丢，置为「已暂停」；点「继续」会凭磁力重新加入并重新校验/下载。
 4. **换回 libtorrent 预案**：libtorrent 有成熟的 resume / 文件校验，代价是 C++ + Boost 的构建复杂度。
 
 ## 集成方式

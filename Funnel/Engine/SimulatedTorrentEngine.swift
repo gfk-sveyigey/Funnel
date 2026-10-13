@@ -87,6 +87,10 @@ final class SimulatedTorrentEngine: TorrentEngineProtocol {
         sessions[taskID] = nil
     }
 
+    func contains(_ taskID: String) -> Bool {
+        sessions[taskID] != nil
+    }
+
     func selectFiles(_ taskID: String, indexes: Set<Int>) async throws {
         guard var session = sessions[taskID] else { return }
         for index in session.status.files.indices {
