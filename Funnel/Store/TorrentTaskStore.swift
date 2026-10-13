@@ -39,6 +39,21 @@ final class TorrentTaskStore {
         save()
     }
 
+    /// 引擎状态没有持久化，重启后「下载中 / 获取元数据 / 做种中」都是过期状态。
+    /// 先把它们置为「已暂停」，避免 UI 显示假进度，等用户手动继续。
+    @discardableResult
+    func reconcileInterruptedTasks() -> Int {
+        var count = 0
+        for index in tasks.indices where tasks[index].state.isActive {
+            tasks[index].state = .paused
+            tasks[index].downloadSpeed = 0
+            tasks[index].uploadSpeed = 0
+            count += 1
+        }
+        if count > 0 { save() }
+        return count
+    }
+
     private func save() {
         do {
             let data = try JSONEncoder().encode(tasks)

@@ -17,6 +17,7 @@ final class SimulatedTorrentEngine: TorrentEngineProtocol {
     private var continuation: AsyncStream<TorrentTaskStatus>.Continuation?
     private var ticker: Timer?
     private var downloadLimit: Int64?
+    private var seedingEnabled = true
 
     private let tickInterval: TimeInterval = 0.5
     private let metadataDelay: TimeInterval = 1.5
@@ -92,8 +93,12 @@ final class SimulatedTorrentEngine: TorrentEngineProtocol {
         emit(session.status)
     }
 
-    func setDownloadLimit(bytesPerSecond: Int?) async throws {
+    func setDownloadLimit(bytesPerSecond: Int?) {
         downloadLimit = bytesPerSecond.map(Int64.init)
+    }
+
+    func setSeedingEnabled(_ enabled: Bool) {
+        seedingEnabled = enabled
     }
 
     // MARK: - 模拟引擎内部
@@ -139,7 +144,7 @@ final class SimulatedTorrentEngine: TorrentEngineProtocol {
                 session.status.peerCount = max(1, session.status.peerCount + Int.random(in: -1...1))
                 Self.distributeProgress(&session.status)
                 if session.status.downloadedBytes >= session.status.totalBytes {
-                    session.status.state = .seeding
+                    session.status.state = seedingEnabled ? .seeding : .completed
                     session.status.downloadSpeed = 0
                 }
 

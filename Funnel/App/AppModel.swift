@@ -30,7 +30,14 @@ final class AppModel {
         keepAlive = KeepAliveCoordinator()
         keepAlive.preferredMode = settings.keepAliveMode
 
+        engine.setDownloadLimit(bytesPerSecond: settings.downloadLimitMBps > 0 ? settings.downloadLimitMBps * 1_048_576 : nil)
+        engine.setSeedingEnabled(settings.seedAfterCompletion)
+
         logs.log("Funnel 启动，引擎：\(engine.engineName)")
+        let interrupted = taskStore.reconcileInterruptedTasks()
+        if interrupted > 0 {
+            logs.log("上次退出时有 \(interrupted) 个任务被中断，已置为暂停", level: .warning)
+        }
         startStatusObservation()
     }
 
@@ -96,6 +103,18 @@ final class AppModel {
         keepAlive.preferredMode = mode
         logs.log("保活模式切换为 \(mode.title)")
         refreshKeepAlive()
+    }
+
+    func setDownloadLimitMBps(_ mbps: Int) {
+        settings.downloadLimitMBps = mbps
+        engine.setDownloadLimit(bytesPerSecond: mbps > 0 ? mbps * 1_048_576 : nil)
+        logs.log(mbps > 0 ? "下载限速：\(mbps) MB/s" : "下载限速：不限")
+    }
+
+    func setSeedingEnabled(_ enabled: Bool) {
+        settings.seedAfterCompletion = enabled
+        engine.setSeedingEnabled(enabled)
+        logs.log(enabled ? "完成后继续做种：开" : "完成后继续做种：关")
     }
 
     func scenePhaseChanged(_ phase: ScenePhase) {

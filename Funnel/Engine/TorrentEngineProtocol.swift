@@ -14,7 +14,9 @@ protocol TorrentEngineProtocol: AnyObject {
     func remove(_ taskID: String, deleteData: Bool) async throws
     /// 只下载选中的文件（多文件种子）。
     func selectFiles(_ taskID: String, indexes: Set<Int>) async throws
-    func setDownloadLimit(bytesPerSecond: Int?) async throws
+    func setDownloadLimit(bytesPerSecond: Int?)
+    /// 完成后是否继续做种。
+    func setSeedingEnabled(_ enabled: Bool)
 
     /// 全量状态流：UI 订阅后同步任务列表。
     func statusStream() -> AsyncStream<TorrentTaskStatus>

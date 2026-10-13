@@ -45,6 +45,20 @@ struct SettingsView: View {
 
             Section("下载") {
                 Toggle("完成后继续做种", isOn: $settings.seedAfterCompletion)
+                    .onChange(of: settings.seedAfterCompletion) { _, newValue in
+                        model.setSeedingEnabled(newValue)
+                    }
+
+                Picker("下载限速", selection: $settings.downloadLimitMBps) {
+                    Text("不限").tag(0)
+                    Text("1 MB/s").tag(1)
+                    Text("2 MB/s").tag(2)
+                    Text("5 MB/s").tag(5)
+                    Text("10 MB/s").tag(10)
+                }
+                .onChange(of: settings.downloadLimitMBps) { _, newValue in
+                    model.setDownloadLimitMBps(newValue)
+                }
             }
 
             Section("日志") {
