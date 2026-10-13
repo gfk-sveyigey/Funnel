@@ -49,7 +49,8 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
         params.paused = true
 
         let handle = try await session.addTorrent(params)
-        let taskID = Self.hex(handle.infoHash.bytes)
+        let infoHash = await handle.infoHash
+        let taskID = Self.hex(infoHash.bytes)
         entries[taskID] = Entry(handle: handle, magnet: magnet, saveDirectory: saveDirectory)
 
         try? await handle.start()
@@ -74,7 +75,8 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
     func remove(_ taskID: String, deleteData: Bool) async throws {
         guard let entry = entries.removeValue(forKey: taskID) else { return }
         // SwiftTorrent 的 deleteFiles 会删掉整个 savePath，粒度太粗；文件删除交给 FileStore。
-        await session.removeTorrent(entry.handle.infoHash, deleteFiles: false)
+        let infoHash = await entry.handle.infoHash
+        await session.removeTorrent(infoHash, deleteFiles: false)
         await emitAll()
     }
 
