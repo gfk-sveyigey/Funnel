@@ -54,7 +54,7 @@ final class AppModel {
         Task {
             do {
                 let directory = try fileStore.prepareDirectory(forName: engineDisplayName(for: magnet))
-                let id = try await engine.add(magnet: magnet, saveDirectory: directory)
+                let id = try await engine.add(magnet: magnet, saveDirectory: directory.path)
                 logs.log("已添加任务 \(id)")
                 refreshKeepAlive()
             } catch {

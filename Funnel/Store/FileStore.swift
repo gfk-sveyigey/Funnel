@@ -15,11 +15,15 @@ final class FileStore {
         documentsURL.appendingPathComponent("Downloads", isDirectory: true)
     }
 
-    /// 为任务建目录，返回相对 Documents 的路径。
-    func prepareDirectory(forName name: String) throws -> String {
+    /// 为任务建目录，返回**绝对** URL（引擎落盘需要绝对路径）。
+    func prepareDirectory(forName name: String) throws -> URL {
         let directory = downloadsRoot.appendingPathComponent(Self.sanitize(name), isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        return relativePath(for: directory)
+        return directory
+    }
+
+    func exists(_ url: URL) -> Bool {
+        fileManager.fileExists(atPath: url.path)
     }
 
     func url(forRelativePath path: String) -> URL {

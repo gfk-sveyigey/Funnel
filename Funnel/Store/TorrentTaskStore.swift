@@ -25,7 +25,10 @@ final class TorrentTaskStore {
         if let index = tasks.firstIndex(where: { $0.id == status.taskID }) {
             tasks[index].apply(status)
         } else {
-            tasks.append(TorrentTask(status: status))
+            // 引擎给的是绝对路径，持久化只存相对 Documents 的路径（容器路径会变）。
+            var task = TorrentTask(status: status)
+            task.savePath = fileStore.relativePath(for: URL(fileURLWithPath: status.saveDirectory))
+            tasks.append(task)
         }
         save()
     }
