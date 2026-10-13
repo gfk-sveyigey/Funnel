@@ -43,6 +43,9 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Resolve Swift packages
+        run: xcodebuild -project Funnel.xcodeproj -scheme Funnel -derivedDataPath build -resolvePackageDependencies
+
       - name: Build (Debug, unsigned)
         run: |
           set -euo pipefail

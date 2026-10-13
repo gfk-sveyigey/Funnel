@@ -9,12 +9,17 @@ settings:
   base:
     MARKETING_VERSION: "0.0.1"
     CURRENT_PROJECT_VERSION: "1"
-    # 语言模式刻意停留在 Swift 5：候选引擎 SwiftyTorrent 是 Swift 5 时代
-    # （Xcode 13 / iOS 15）的代码，且没有 SwiftPM 包。等 M0 验证 / 引擎替换后
-    # 再统一评估是否升到 Swift 6。
+    # 语言模式停留在 Swift 5：SwiftTorrent 只要求 Swift 5.9 工具链，Swift 5 语言模式即可；
+    # 我们自己的代码以 @MainActor + @Observable 为主，暂不需要 Swift 6 严格并发。
+    # 将来若引入要求 Swift 6 的依赖再统一升级。
     SWIFT_VERSION: "5.0"
     SWIFT_STRICT_CONCURRENCY: minimal
     ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+packages:
+  SwiftTorrent:
+    url: https://github.com/warppipe/swift-torrent
+    branch: main
 
 targets:
   Funnel:
@@ -23,6 +28,8 @@ targets:
     deploymentTarget: "26.0"
     sources:
       - path: Funnel
+    dependencies:
+      - package: SwiftTorrent
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.aholic.funnel

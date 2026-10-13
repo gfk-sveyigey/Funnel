@@ -70,6 +70,10 @@ jobs:
         if: steps.tag.outputs.exists == 'false'
         run: xcodegen generate
 
+      - name: Resolve Swift packages
+        if: steps.tag.outputs.exists == 'false'
+        run: xcodebuild -project Funnel.xcodeproj -scheme Funnel -derivedDataPath build -resolvePackageDependencies
+
       - name: Build (Release, unsigned)
         if: steps.tag.outputs.exists == 'false'
         run: |
