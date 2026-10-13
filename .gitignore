@@ -1,0 +1,12 @@
+# Xcode / 构建产物
+build/
+DerivedData/
+Payload/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+*.ipa
+*.dSYM.zip
+
+# macOS
+.DS_Store

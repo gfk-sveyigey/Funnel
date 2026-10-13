@@ -17,6 +17,9 @@
   - 静音音频：`AVAudioSession(.playback)` + 循环播放极短静音文件，无界面侵入、最稳。
   - PiP：`AVPictureInPictureController` 挂循环占位视频，用户可见、可主动关闭。
   - 两者都依赖 `UIBackgroundModes: audio`；做成策略可插拔 + 失败自动降级链。
+- UI 视觉：采用 iOS 26 的 **液态玻璃（Liquid Glass）** 设计语言，导航栏 / 工具栏 / 卡片使用玻璃材质（SwiftUI `.glassEffect()` / `GlassEffectContainer`，UIKit `UIGlassEffect`）。
+  - 回退：旧系统或开启「降低透明度 / 降低动态效果」时自动降级为 `UIBlurEffect` 毛玻璃，无可模糊能力时用纯色，保证可读性。
+  - 边界：玻璃仅作装饰层，不遮挡任务进度等关键信息；限制玻璃层数量与范围，避免大面积堆叠带来的性能与功耗开销。
 - 分发
   - AltStore / SideStore（7 天重签）、付费账号（1 年）、或 TrollStore（视系统版本）。
 
@@ -111,3 +114,13 @@
 - 静音音频与 PiP 两种保活可切换，PiP 关闭能自动降级。
 - 完成文件在「文件」App 可见、可分享、可删除。
 - 无崩溃、无明显内存泄漏，日志可导出。
+
+## 十二、构建与发布（CI/CD）
+
+- 构建与发布全部走 **GitHub Actions**，用 XcodeGen 生成 Xcode 工程（`.xcodeproj` 不提交）。
+- 版本号唯一来源：仓库根目录的 `VERSION` 文件（semver，如 `0.1.0`）。
+- 工作流：
+  - `dev` 分支推送 → 编译 Debug 版**无签名** IPA，上传为 Actions 工件（保留 14 天）。
+  - 合并到 `main` 的 PR → 编译 Release 版**无签名** IPA，创建 `v<VERSION>` 标签与 Release。
+- 产物为未签名 IPA，需用 AltStore / SideStore / Sideloadly 或自有证书重签名后安装。
+- 完整触发规则、发布步骤与注意事项见 [`docs/RELEASING.md`](docs/RELEASING.md)。

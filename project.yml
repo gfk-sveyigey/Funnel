@@ -1,0 +1,44 @@
+name: Funnel
+options:
+  bundleIdPrefix: com.aholic
+  deploymentTarget:
+    iOS: "26.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    MARKETING_VERSION: "0.0.1"
+    CURRENT_PROJECT_VERSION: "1"
+    # 语言模式刻意停留在 Swift 5：候选引擎 SwiftyTorrent 是 Swift 5 时代
+    # （Xcode 13 / iOS 15）的代码，且没有 SwiftPM 包。等 M0 验证 / 引擎替换后
+    # 再统一评估是否升到 Swift 6。
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+
+targets:
+  Funnel:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: Funnel
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aholic.funnel
+        PRODUCT_NAME: Funnel
+        INFOPLIST_FILE: Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+
+schemes:
+  Funnel:
+    build:
+      targets:
+        Funnel: all
+    run:
+      config: Debug
+    archive:
+      config: Release
