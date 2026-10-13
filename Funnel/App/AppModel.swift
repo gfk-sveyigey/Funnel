@@ -16,6 +16,7 @@ final class AppModel {
 
     @ObservationIgnored private var statusTask: Task<Void, Never>?
     @ObservationIgnored private var eventTask: Task<Void, Never>?
+    @ObservationIgnored private var resumeTask: Task<Void, Never>?
 
     init() {
         let logs = LogStore()
@@ -41,6 +42,7 @@ final class AppModel {
         }
         startStatusObservation()
         startEventObservation()
+        startResumePersistence()
     }
 
     // MARK: - 操作
@@ -65,7 +67,9 @@ final class AppModel {
 
     func pause(_ task: TorrentTask) {
         Task {
+            let data = await engine.resumeData(task.id)
             try? await engine.pause(task.id)
+            taskStore.setResumeData(data, for: task.id)
             logs.log("暂停 \(task.name)")
             refreshKeepAlive()
         }
@@ -78,11 +82,16 @@ final class AppModel {
                     try await engine.resume(task.id)
                     logs.log("继续 \(task.name)")
                 } else {
-                    // App 重启后引擎里的句柄已丢失，「继续」需要凭磁力重新加入。
-                    // 已知限制：当前引擎不消费 resumeData，会重新校验/下载（见 docs/M0-ENGINE.md）。
+                    // App 重启后引擎里的句柄已丢失：凭磁力 + 续传数据重新加入，
+                    // 引擎会哈希校验磁盘上已存在的分片，只补下缺失部分。
                     let directory = try fileStore.prepareDirectory(relativePath: task.savePath)
-                    try await engine.add(magnet: task.magnet, saveDirectory: directory.path)
-                    logs.log("重启恢复：重新加入 \(task.name)", level: .warning)
+                    let resumeData = taskStore.resumeData(for: task.id)
+                    try await engine.add(
+                        magnet: task.magnet,
+                        saveDirectory: directory.path,
+                        resumeData: resumeData
+                    )
+                    logs.log("重启恢复：重新加入 \(task.name)（校验后继续）")
                 }
                 refreshKeepAlive()
             } catch {
@@ -134,6 +143,9 @@ final class AppModel {
     func scenePhaseChanged(_ phase: ScenePhase) {
         keepAlive.scenePhase = phase
         refreshKeepAlive()
+        if phase != .active {
+            persistResumeData()
+        }
     }
 
     // MARK: - 内部
@@ -154,6 +166,33 @@ final class AppModel {
         eventTask = Task { [engine, logs] in
             for await line in engine.eventStream() {
                 logs.log(line)
+            }
+        }
+    }
+
+    /// 定期把任务的续传数据写盘，尽量减小被系统强杀时的进度损失。
+    private func startResumePersistence() {
+        resumeTask?.cancel()
+        resumeTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(15))
+                guard let self, !Task.isCancelled else { break }
+                self.persistResumeData()
+            }
+        }
+    }
+
+    /// 抓取「进行中或已完成」任务的续传数据并持久化。
+    private func persistResumeData() {
+        let ids = taskStore.tasks
+            .filter { $0.state.isActive || $0.state == .completed }
+            .map { $0.id }
+        guard !ids.isEmpty else { return }
+        Task { [engine, taskStore] in
+            for id in ids {
+                if let data = await engine.resumeData(id) {
+                    taskStore.setResumeData(data, for: id)
+                }
             }
         }
     }

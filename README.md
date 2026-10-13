@@ -4,7 +4,7 @@
 
 - 平台：仅 iOS（侧载分发，非 App Store）。
 - 定位：粘贴/接收磁力链接 → 后台下载 → 成品进「文件」App，可播放。
-- 引擎：**SwiftTorrent**（纯 Swift，省掉 libtorrent/Boost 的构建地狱）。
+- 引擎：**SwiftTorrent**（纯 Swift，省掉 libtorrent/Boost 的构建地狱）。库已 vendor 进 `Vendor/swift-torrent` 并打补丁支持**断点续传**（见 `docs/M0-ENGINE.md`）。
 - 保活：**静音音频** 与 **画中画（PiP）** 双方案，用户可选/可切换。
 
 ## 二、技术选型与依据
@@ -13,6 +13,7 @@
   - 优点：纯 Swift，无 C++/Boost 交叉编译，集成成本低。
   - 代价：成熟度与功能覆盖未知，**这是本项目最大的风险**（见 M0）。
   - 缓解：用 `TorrentEngineProtocol` 门面隔离引擎，一旦不可用可整体替换为 libtorrent，UI 层零改动。
+  - 续传：上游不实现断点续传，已 vendor 源码 + 打补丁（分片位图 seed + 启动哈希校验），详见 `docs/M0-ENGINE.md`。
 - 保活双方案
   - 静音音频：`AVAudioSession(.playback)` + 循环播放极短静音文件，无界面侵入、最稳。
   - PiP：`AVPictureInPictureController` 挂循环占位视频，用户可见、可主动关闭。

@@ -7,8 +7,11 @@ protocol TorrentEngineProtocol: AnyObject {
     var engineName: String { get }
 
     /// 添加磁力任务，返回任务 id（用 info hash）。
+    /// - Parameter resumeData: 续传数据（resumeData(_:) 的产出）；nil 表示从零开始。
     @discardableResult
-    func add(magnet: String, saveDirectory: String) async throws -> String
+    func add(magnet: String, saveDirectory: String, resumeData: Data?) async throws -> String
+    /// 取某任务的续传数据供持久化；引擎没有该任务时返回 nil。
+    func resumeData(_ taskID: String) async -> Data?
     func pause(_ taskID: String) async throws
     func resume(_ taskID: String) async throws
     func remove(_ taskID: String, deleteData: Bool) async throws
@@ -27,4 +30,13 @@ protocol TorrentEngineProtocol: AnyObject {
 
     /// 引擎侧事件（tracker / peer / 错误）文本流，供 UI 记日志。
     func eventStream() -> AsyncStream<String>
+}
+
+@MainActor
+extension TorrentEngineProtocol {
+    /// 从零开始添加任务（无续传数据）。
+    @discardableResult
+    func add(magnet: String, saveDirectory: String) async throws -> String {
+        try await add(magnet: magnet, saveDirectory: saveDirectory, resumeData: nil)
+    }
 }

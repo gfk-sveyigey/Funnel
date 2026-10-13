@@ -55,8 +55,11 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
     }
 
     @discardableResult
-    func add(magnet: String, saveDirectory: String) async throws -> String {
+    func add(magnet: String, saveDirectory: String, resumeData: Data?) async throws -> String {
         var params = try AddTorrentParams.fromMagnet(magnet, savePath: saveDirectory)
+        if let resumeData, !resumeData.isEmpty {
+            params.resumeData = try? ResumeData.decode(from: resumeData)
+        }
         params.paused = true
 
         let handle = try await session.addTorrent(params)
@@ -81,6 +84,13 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
         guard let entry = entries[taskID] else { return }
         try await entry.handle.resume()
         await emitAll()
+    }
+
+    /// 取当前任务的续传数据：已校验完成的分片位图 + 计数器。
+    func resumeData(_ taskID: String) async -> Data? {
+        guard let entry = entries[taskID] else { return nil }
+        let data = await entry.handle.generateResumeData()
+        return data?.encode()
     }
 
     func remove(_ taskID: String, deleteData: Bool) async throws {

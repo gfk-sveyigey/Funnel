@@ -33,6 +33,17 @@ final class TorrentTaskStore {
         save()
     }
 
+    func resumeData(for id: String) -> Data? {
+        tasks.first { $0.id == id }?.resumeData
+    }
+
+    func setResumeData(_ data: Data?, for id: String) {
+        guard let index = tasks.firstIndex(where: { $0.id == id }) else { return }
+        guard tasks[index].resumeData != data else { return }
+        tasks[index].resumeData = data
+        save()
+    }
+
     func remove(id: String, deleteData: Bool) {
         guard let task = tasks.first(where: { $0.id == id }) else { return }
         tasks.removeAll { $0.id == id }

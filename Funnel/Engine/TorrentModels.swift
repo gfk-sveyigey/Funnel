@@ -70,6 +70,8 @@ struct TorrentTask: Identifiable, Codable, Hashable {
     /// 只存相对 Documents 的路径（容器路径会变）。
     var savePath: String
     var errorMessage: String?
+    /// 续传数据（引擎 ResumeData.encode() 的产物），用于重启后跳过已下载分片。
+    var resumeData: Data?
 
     var progress: Double { totalBytes > 0 ? Double(downloadedBytes) / Double(totalBytes) : 0 }
 }
@@ -89,6 +91,7 @@ extension TorrentTask {
         files = status.files
         savePath = status.saveDirectory
         errorMessage = status.errorMessage
+        resumeData = nil
     }
 
     mutating func apply(_ status: TorrentTaskStatus) {

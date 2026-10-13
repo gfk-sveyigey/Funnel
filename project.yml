@@ -17,9 +17,9 @@ settings:
     ENABLE_USER_SCRIPT_SANDBOXING: YES
 
 packages:
+  # 已 vendor 进仓库并打过「断点续传」补丁（见 docs/M0-ENGINE.md），改用本地路径依赖。
   SwiftTorrent:
-    url: https://github.com/warppipe/swift-torrent
-    branch: main
+    path: Vendor/swift-torrent
 
 targets:
   Funnel:

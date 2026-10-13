@@ -5,7 +5,7 @@
 采用 **SwiftTorrent**（`warppipe/swift-torrent`，纯 Swift、SwiftPM）。
 默认引擎已切到 `SwiftTorrentEngine`；把 `EngineFactory.kind` 改成 `.simulated` 可一键回退占位引擎。
 
-> ⚠️ 已知阻塞项：**断点续传未实现**（库接受 `resumeData` 但从不应用），详见下文。
+> ✅ **断点续传已实现**：库源码 vendor 进 `Vendor/swift-torrent` 并打过补丁，重启后按分片哈希校验续传，详见下文《断点续传》。
 
 ## 候选对比
 
@@ -35,32 +35,39 @@
 2. **无版本标签**：只能 `branch: main` 或锁 commit SHA，复现性较弱。当前用 `branch: main`，后续建议锁 revision。
 3. **成熟度**：个人项目、约 44★，API 仍可能变动，需要自建回归。
 4. **能力缺口**：
-   - **断点续传未实现（高，阻塞）** → 见下文《断点续传》一节。
+   - **断点续传**：上游未实现，已 vendor + 打补丁修复，见下文《断点续传》。
    - 无 per-file 选择优先级 → `selectFiles` 目前只记录、不下发（M3 需补）。
    - 无 per-file 进度 → 文件行进度暂显 0，只有任务级进度准确。
    - `deleteFiles` 粒度太粗（会删整个 savePath）→ 已改为由 `FileStore` 删除。
 
 
-## 断点续传：当前引擎的阻塞项
+## 断点续传（已实现）
 
-- 库里确实有 `ResumeData`（`Storage/ResumeData.swift`，带 `encode()` / `decode(from:)`），`TorrentHandle.generateResumeData()` 也能产出。
-- 但 **`AddTorrentParams.resumeData` 在整个库里从未被读取**：
-  - `TorrentHandle.init` 不引用 `params.resumeData`；
-  - `setupDownloadComponents` 用 `PieceManager(info:)` 从零构建 `Bitfield`；
-  - `DiskIO` 也没有「校验已存在文件 / 恢复已完成分片」的逻辑。
-- 结论：**杀进程重启后进度丢失、会从头重下**，与 README「断点续传是硬要求」冲突。
-- App 层现状：重启后原任务会被置为「已暂停」，点「继续」时 `AppModel` 检测到引擎已无句柄（`engine.contains == false`），会凭磁力**重新加入**并重新校验/下载；任务元数据（名称、目录、文件列表）不会丢。
+上游库本身不消费 `resumeData`：`TorrentHandle.init` 不引用它，`setupDownloadComponents` 用 `PieceManager(info:)` 从零建 `Bitfield`，`DiskIO` 也不校验已存在文件——原样使用会「杀进程重启后从头重下」。
 
-### 可选处理
+本仓库采用 **vendoring + 打补丁**（不依赖上游合并）：
 
-1. **给上游提 PR（推荐，工作量可控）**：让 `PieceManager` 接受初始 `Bitfield`（用 `ResumeData.completedPieces`），让 `DiskIO` 启动时按分片哈希校验已存在文件，并把 `params.resumeData` 透传进 `TorrentHandle`。库内已有 `Bitfield` / `PieceManager.getCompleted()` / `FileStorage` 等构件。
-2. **自行维护 fork**：上游未合并前先自用（也顺带能解决许可证问题）。
-3. **接受重下**（当前实现）：重启后任务不丢，置为「已暂停」；点「继续」会凭磁力重新加入并重新校验/下载。
-4. **换回 libtorrent 预案**：libtorrent 有成熟的 resume / 文件校验，代价是 C++ + Boost 的构建复杂度。
+- 库源码放进 `Vendor/swift-torrent`，`project.yml` 改用本地 `path:` 依赖；CI 不再拉取上游分支，构建可复现。
+- `PieceManager` 新增 `init(info:completed:)`，用 `ResumeData.completedPieces` 初始化分片位图；新增 `verifyPieces(_:using:)`，启动时对「声称已完成」的分片按 SHA-1 重新校验磁盘数据。
+- `TorrentHandle` 保存 `params.resumeData`，在 `setupDownloadComponents` 里先 seed 再校验，并按校验通过的分片重算 `totalDownloaded`（tracker 的 `left` 因此正确）。
+- 校验不通过（文件缺失 / 被截断 / 被改坏）的分片会被丢弃重下，等价于一次「快速 recheck」。
 
+App 层配合：
+
+- `TorrentTask.resumeData`（`Data?`）随 `tasks.json` 持久化。
+- 暂停、切后台、以及每 15 秒的定时器都会调用 `engine.resumeData(_:)` 抓一次并写盘。
+- 重启后任务为「已暂停」：点「继续」时 `AppModel` 发现引擎已无句柄（`engine.contains == false`），就用磁力 + 存下来的 `resumeData` 重新加入，只补缺失分片。
+
+> 注意：磁力任务的 info（文件列表）仍需从 DHT / peer 重新获取一次（通常几秒），之后按校验结果续传；已下载分片不会丢。
+
+### 仍未做的（可选）
+
+1. **给上游提 PR**：把这些补丁提回 `warppipe/swift-torrent`，合并后即可去掉 vendoring。
+2. **缓存 .torrent info**：把 info 字典一并持久化，重启后无需重新获取元数据。
+3. **换回 libtorrent 预案**：resume / 文件校验更成熟，代价是 C++ + Boost 的构建复杂度。
 ## 集成方式
 
-- `project.yml`：`packages:` 声明 `SwiftTorrent`（`branch: main`），target `Funnel` 依赖该 package。
+- `project.yml`：`packages:` 声明 `SwiftTorrent` 为本地路径 `Vendor/swift-torrent`（已打续传补丁），target `Funnel` 依赖该 package。
 - `Funnel/Engine/SwiftTorrentEngine.swift`：把 `TorrentEngineProtocol` 映射到 `Session` / `TorrentHandle` / `TorrentStatus`。
 - `EngineFactory.kind = .swiftTorrent`：默认启用；改 `.simulated` 回退。
 - CI：build / release 工作流新增 `xcodebuild -resolvePackageDependencies`，先解析再编译。
@@ -71,6 +78,6 @@
 - [ ] 粘贴磁力 → 获取元数据 → 文件列表出现。
 - [ ] 能连上 peer 并真正下载（公网种子）。
 - [ ] 后台保活（静音音频 / PiP）下仍持续下载。
-- [ ] 杀进程重启后能续传（**当前引擎未实现 resume 恢复，需上游修复 / fork 或换引擎**）。
+- [ ] 杀进程重启后能续传（已 vendor + 打补丁；需真机验证「只补缺失分片」）。
 - [ ] 限速、做种开关生效。
 - [ ] 许可证问题解决。
