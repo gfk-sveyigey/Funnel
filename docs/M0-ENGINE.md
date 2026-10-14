@@ -60,6 +60,12 @@ App 层配合：
 
 > 注意：磁力任务的 info（文件列表）仍需从 DHT / peer 重新获取一次（通常几秒），之后按校验结果续传；已下载分片不会丢。
 
+### 已修的磁力元数据阻塞（BUG）
+
+- 症状：磁力任务永远停在「获取元数据」。
+- 根因：`PeerConnection.connect()` 在远端握手还没收到时就读取 `decoder.remoteSupportsExtensions`（握手是异步解码的，此刻必然是 false），于是 `supportsExtensions == false`，`onPeerConnected` 从不发送 BEP-10 扩展握手，BEP-9 元数据交换根本没开始。
+- 修复：用 event-loop promise 等待远端握手（10s 超时）再上报 `supportsExtensions`；并把 `.extended` 消息处理提前到 peer-state 判空之前，避免对端扩展握手早于连接回调注册而丢失。
+
 ### 仍未做的（可选）
 
 1. **给上游提 PR**：把这些补丁提回 `warppipe/swift-torrent`，合并后即可去掉 vendoring。

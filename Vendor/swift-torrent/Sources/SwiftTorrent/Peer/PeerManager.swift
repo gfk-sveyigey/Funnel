@@ -112,6 +112,27 @@ public actor PeerManager {
     }
 
     private func handleMessage(_ message: PeerMessage, from key: String) async {
+        // Metadata (BEP-9/BEP-10) messages are handled before the peer-state
+        // guard: the peer's extended handshake can arrive before the connect
+        // task has run onPeerConnected and registered the peer state.
+        if case .extended(let extID, let payload) = message {
+            guard let metaEx = metadataExchange else { return }
+            let result = await metaEx.handleExtendedMessage(id: extID, payload: payload)
+            switch result {
+            case .sendMessage(let msg):
+                try? await connections[key]?.send(msg)
+            case .requestMore(let messages):
+                for msg in messages {
+                    try? await connections[key]?.send(msg)
+                }
+            case .metadataComplete(let info):
+                onMetadataReceived?(info)
+            case .none:
+                break
+            }
+            return
+        }
+
         guard let state = peerStates[key] else { return }
 
         switch message {
@@ -165,23 +186,6 @@ public actor PeerManager {
             }
 
             await fillRequests(for: key)
-
-        case .extended(let extID, let payload):
-            if let metaEx = metadataExchange {
-                let result = await metaEx.handleExtendedMessage(id: extID, payload: payload)
-                switch result {
-                case .sendMessage(let msg):
-                    try? await connections[key]?.send(msg)
-                case .requestMore(let messages):
-                    for msg in messages {
-                        try? await connections[key]?.send(msg)
-                    }
-                case .metadataComplete(let info):
-                    onMetadataReceived?(info)
-                case .none:
-                    break
-                }
-            }
 
         default:
             break
