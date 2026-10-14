@@ -47,11 +47,10 @@ public final class PeerConnection: @unchecked Sendable {
         // always see supportsExtensions == false and silently disable BEP-10.
         let handshakeLoop = group.next()
         let handshakePromise = handshakeLoop.makePromise(of: Handshake.self)
+        let handshakeGate = HandshakeGate()
         decoder.onHandshake = { handshake in
-            handshakeLoop.execute {
-                if !handshakePromise.futureResult.isFulfilled {
-                    handshakePromise.succeed(handshake)
-                }
+            if handshakeGate.tryComplete() {
+                handshakeLoop.execute { handshakePromise.succeed(handshake) }
             }
         }
 
@@ -78,13 +77,19 @@ public final class PeerConnection: @unchecked Sendable {
 
         // Wait for the remote handshake before reporting connection info.
         let timeout = handshakeLoop.scheduleTask(in: .seconds(10)) {
-            if !handshakePromise.futureResult.isFulfilled {
+            if handshakeGate.tryComplete() {
                 handshakePromise.fail(PeerConnectionError.handshakeFailed)
             }
         }
         defer { timeout.cancel() }
 
-        let remote = try await handshakePromise.futureResult.get()
+        let remote: Handshake
+        do {
+            remote = try await handshakePromise.futureResult.get()
+        } catch {
+            try? await ch.close().get()
+            throw error
+        }
         self.remotePeerID = remote.peerID
         self.supportsExtensions = (remote.reserved[remote.reserved.startIndex + 5] & 0x10) != 0
 
@@ -107,6 +112,22 @@ public final class PeerConnection: @unchecked Sendable {
 public enum PeerConnectionError: Error {
     case notConnected
     case handshakeFailed
+}
+
+/// One-shot, thread-safe flag ensuring the handshake promise is completed
+/// exactly once (remote handshake vs. timeout race).
+private final class HandshakeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completed = false
+
+    /// Returns true only for the first caller.
+    func tryComplete() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if completed { return false }
+        completed = true
+        return true
+    }
 }
 
 // MARK: - NIO Channel Handlers
