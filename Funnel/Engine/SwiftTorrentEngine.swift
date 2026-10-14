@@ -25,6 +25,8 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
     private var latestStatus: [String: TorrentTaskStatus] = [:]
     /// 元数据未到位时暂存的按文件选择（磁力场景），metadata 到达后自动下发。
     private var pendingSelection: [String: Set<Int>] = [:]
+    /// 上次推送的任务状态，用于识别「元数据已获取」这类跃迁并记日志。
+    private var lastStates: [String: TorrentTaskState] = [:]
     private var eventContinuation: AsyncStream<String>.Continuation?
     private var alertTask: Task<Void, Never>?
 
@@ -99,6 +101,7 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
         // SwiftTorrent 的 deleteFiles 会删掉整个 savePath，粒度太粗；文件删除交给 FileStore。
         latestStatus[taskID] = nil
         pendingSelection[taskID] = nil
+        lastStates[taskID] = nil
         let infoHash = await entry.handle.infoHash
         await session.removeTorrent(infoHash, deleteFiles: false)
         await emitAll()
@@ -202,6 +205,10 @@ final class SwiftTorrentEngine: TorrentEngineProtocol {
                 files: files,
                 seedingEnabled: seedingEnabled
             )
+            if let previous = lastStates[taskID], previous == .metadata, mapped.state != .metadata {
+                eventContinuation?.yield("已获取元数据：\(mapped.name)")
+            }
+            lastStates[taskID] = mapped.state
             latestStatus[taskID] = mapped
             continuation.yield(mapped)
         }

@@ -42,6 +42,18 @@ public final class PeerConnection: @unchecked Sendable {
         let onDisc = self.onDisconnect
         let decoder = PeerMessageDecoder()
 
+        // The remote handshake arrives asynchronously, so capture it via a
+        // promise. Reading the decoder right after connect() returns would
+        // always see supportsExtensions == false and silently disable BEP-10.
+        let handshakeLoop = group.next()
+        let handshakePromise = handshakeLoop.makePromise(of: Handshake.self)
+        let handshakeGate = HandshakeGate()
+        decoder.onHandshake = { handshake in
+            if handshakeGate.tryComplete() {
+                handshakeLoop.execute { handshakePromise.succeed(handshake) }
+            }
+        }
+
         let bootstrap = ClientBootstrap(group: group)
             .channelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .connectTimeout(.seconds(10))
@@ -63,9 +75,23 @@ public final class PeerConnection: @unchecked Sendable {
         // Add the message encoder after handshake is sent
         try await ch.pipeline.addHandler(PeerMessageEncoder()).get()
 
-        // Store remote handshake info
-        self.remotePeerID = decoder.remotePeerID
-        self.supportsExtensions = decoder.remoteSupportsExtensions
+        // Wait for the remote handshake before reporting connection info.
+        let timeout = handshakeLoop.scheduleTask(in: .seconds(10)) {
+            if handshakeGate.tryComplete() {
+                handshakePromise.fail(PeerConnectionError.handshakeFailed)
+            }
+        }
+        defer { timeout.cancel() }
+
+        let remote: Handshake
+        do {
+            remote = try await handshakePromise.futureResult.get()
+        } catch {
+            try? await ch.close().get()
+            throw error
+        }
+        self.remotePeerID = remote.peerID
+        self.supportsExtensions = (remote.reserved[remote.reserved.startIndex + 5] & 0x10) != 0
 
         return ch
     }
@@ -88,6 +114,22 @@ public enum PeerConnectionError: Error {
     case handshakeFailed
 }
 
+/// One-shot, thread-safe flag ensuring the handshake promise is completed
+/// exactly once (remote handshake vs. timeout race).
+private final class HandshakeGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var completed = false
+
+    /// Returns true only for the first caller.
+    func tryComplete() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        if completed { return false }
+        completed = true
+        return true
+    }
+}
+
 // MARK: - NIO Channel Handlers
 
 /// Decodes peer wire protocol messages from byte stream.
@@ -97,6 +139,8 @@ final class PeerMessageDecoder: ByteToMessageDecoder {
     private var handshakeReceived = false
     var remotePeerID: Data?
     var remoteSupportsExtensions: Bool = false
+    /// Fired once the remote handshake has been decoded.
+    var onHandshake: (@Sendable (Handshake) -> Void)?
 
     func decode(context: ChannelHandlerContext, buffer: inout ByteBuffer) throws -> DecodingState {
         if !handshakeReceived {
@@ -104,8 +148,9 @@ final class PeerMessageDecoder: ByteToMessageDecoder {
             guard let bytes = buffer.readBytes(length: Handshake.length) else { return .needMoreData }
             let handshake = try Handshake.decode(from: Data(bytes))
             remotePeerID = handshake.peerID
-            remoteSupportsExtensions = (handshake.reserved[5] & 0x10) != 0
+            remoteSupportsExtensions = (handshake.reserved[handshake.reserved.startIndex + 5] & 0x10) != 0
             handshakeReceived = true
+            onHandshake?(handshake)
             return .continue
         }
 
